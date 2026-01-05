@@ -47,3 +47,36 @@ export const getAddress = async (lat: number, lng: number): Promise<string> => {
     requestQueue = currentRequest.catch(() => { }); // catch to prevent queue blockage
     return currentRequest;
 };
+export const searchLocation = async (query: string): Promise<{ lat: number; lng: number; address: string } | null> => {
+    const currentRequest = requestQueue.then(async () => {
+        await delay(1000);
+        try {
+            const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+                params: {
+                    format: 'json',
+                    q: query,
+                    limit: 1
+                },
+                headers: {
+                    'User-Agent': 'DeliveryRouterApp/1.0'
+                }
+            });
+
+            if (response.data && response.data.length > 0) {
+                const result = response.data[0];
+                return {
+                    lat: parseFloat(result.lat),
+                    lng: parseFloat(result.lon),
+                    address: result.display_name
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Search error:', error);
+            return null;
+        }
+    });
+
+    requestQueue = currentRequest.catch(() => { });
+    return currentRequest;
+};

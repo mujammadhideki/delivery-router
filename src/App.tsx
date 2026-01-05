@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import MapComponent from './components/Map'
 import { getRoute, decodePolyline } from './services/osrm';
-import { getAddress } from './services/geocoding';
+import { getAddress, searchLocation } from './services/geocoding';
 import type { LatLng, LatLngExpression } from 'leaflet';
 import {
   DndContext,
@@ -296,27 +296,10 @@ function App() {
       lat = parseFloat(simpleMatch[1]);
       lng = parseFloat(simpleMatch[2]);
     }
-    // 2. Try Long Google Maps URL
-    else if (input.includes('google.com/maps')) {
-      const atMatch = input.match(/@([-+]?\d+\.\d+),([-+]?\d+\.\d+)/);
-      const qMatch = input.match(/[?&]q=([-+]?\d+\.\d+),([-+]?\d+\.\d+)/);
-      const llMatch = input.match(/[?&]ll=([-+]?\d+\.\d+),([-+]?\d+\.\d+)/); // strict parameter
-
-      if (atMatch) { lat = parseFloat(atMatch[1]); lng = parseFloat(atMatch[2]); }
-      else if (qMatch) { lat = parseFloat(qMatch[1]); lng = parseFloat(qMatch[2]); }
-      else if (llMatch) { lat = parseFloat(llMatch[1]); lng = parseFloat(llMatch[2]); }
-    }
-    // 3. Try Short/Share URL (maps.app.goo.gl)
-    else if (input.includes('goo.gl') || input.includes('maps.app.goo.gl')) {
-      setCoordInputText('Procesando enlace...'); // Loading feedback
+    // 2. Try Long Google Maps URL or Short URL
+    else if (input.includes('google.com/maps') || input.includes('goo.gl') || input.includes('maps.app.goo.gl')) {
+      setCoordInputText('Procesando enlace...');
       try {
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(input)}`;
-        const res = await fetch(proxyUrl);
-        const data = await res.json();
-        const html = data.contents || '';
-        const resolvedUrl = data.status?.url || '';
-
-        // Helper to find coords in text
         const findCoords = (text: string) => {
           const decoded = decodeURIComponent(text);
           const atMatch = decoded.match(/@([-+]?\d+\.\d+),([-+]?\d+\.\d+)/);
@@ -331,22 +314,35 @@ function App() {
           return null;
         };
 
-        let coords = findCoords(resolvedUrl);
-        if (!coords) coords = findCoords(html);
+        let coords = findCoords(input);
+
+        // If not found in URL directly, use proxy (usually for short links)
+        if (!coords) {
+          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(input)}`;
+          const res = await fetch(proxyUrl);
+          const data = await res.json();
+          const html = data.contents || '';
+          const resolvedUrl = data.status?.url || '';
+
+          coords = findCoords(resolvedUrl);
+          if (!coords) coords = findCoords(html);
+
+          if (!coords) {
+            // Last resort: deep search for encoded q= in HTML
+            const htmlDecoded = decodeURIComponent(html);
+            const deepMatch = htmlDecoded.match(/q=([-+]?\d+\.\d+)%2C\+([-+]?\d+\.\d+)/) ||
+              htmlDecoded.match(/q=([-+]?\d+\.\d+),([-+]?\d+\.\d+)/) ||
+              htmlDecoded.match(/q=([-+]?\d+\.\d+)\+([-+]?\d+\.\d+)/);
+            if (deepMatch) {
+              coords = { lat: parseFloat(deepMatch[1]), lng: parseFloat(deepMatch[2]) };
+            }
+          }
+        }
 
         if (coords) {
           lat = coords.lat;
           lng = coords.lng;
         } else {
-          // Special deep check for specific Google Maps pattern seen in debug
-          const deepMatch = html.match(/q=([-+]?\d+\.\d+)%2C\+([-+]?\d+\.\d+)/);
-          if (deepMatch) {
-            lat = parseFloat(deepMatch[1]);
-            lng = parseFloat(deepMatch[2]);
-          }
-        }
-
-        if (lat === null || lng === null) {
           alert('No se pudieron extraer coordenadas. Intenta usar el enlace largo de Google Maps.');
           setCoordInputText(input);
           return;
@@ -358,15 +354,31 @@ function App() {
         return;
       }
     }
+    // 3. Try Plus Code or Address search (e.g. "G424+J49 Caracas")
+    else {
+      setCoordInputText('Buscando ubicación...');
+      try {
+        const result = await searchLocation(input);
+        if (result && isValid(result.lat, result.lng)) {
+          lat = result.lat;
+          lng = result.lng;
+        } else {
+          alert('No se encontró la ubicación. Intenta con coordenadas (lat, lng) o el enlace de Google Maps.');
+          setCoordInputText(input);
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error en la búsqueda de dirección.');
+        setCoordInputText(input);
+        return;
+      }
+    }
 
     if (lat !== null && lng !== null && isValid(lat, lng)) {
       handleLocationSelect({ lat, lng } as LatLng);
       setShowCoordInput(false);
       setCoordInputText('');
-    } else {
-      alert('Formato no reconocido. Intenta: "Lat, Lng" o un enlace válido de Google Maps.');
-      // If we failed during "Processing...", verify if we should clear or restore
-      if (coordInputText === 'Procesando enlace...') setCoordInputText('');
     }
   };
 
@@ -681,13 +693,15 @@ function App() {
         }}>
           <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', minWidth: '300px' }}>
             <h3 style={{ marginTop: 0 }}>Agregar Ubicación</h3>
-            <p style={{ fontSize: '0.9rem', color: '#666' }}>Coordenadas o Enlace de Google Maps</p>
+            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '10px' }}>
+              Pega coordenadas, un enlace de Google Maps, o un <strong>Plus Code</strong> (ej: G424+J49 Caracas)
+            </p>
             <input
               autoFocus
               type="text"
               value={coordInputText}
               onChange={(e) => setCoordInputText(e.target.value)}
-              placeholder="10.49, -66.89"
+              placeholder="Ej: 10.49, -66.89 o Plus Code"
               style={{ width: '100%', padding: '0.5rem', fontSize: '1rem', marginBottom: '1rem', boxSizing: 'border-box' }}
               onKeyDown={(e) => e.key === 'Enter' && handleCoordinateSubmit()}
             />
