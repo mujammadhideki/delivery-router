@@ -545,7 +545,7 @@ function App() {
                 flexShrink: 0
               }}
             >
-              {showPanel ? 'Ver Mapa' : 'Ver Lista'}
+              {showPanel ? 'Mapa Solo' : 'Dividir'}
             </button>
           )}
           <button onClick={handleLocateMe} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Ubicarme</button>
@@ -556,8 +556,8 @@ function App() {
         </div>
       </header>
 
-      <div style={{ flex: 1, position: 'relative', display: 'flex', overflow: 'hidden' }}>
-        <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: 'hidden' }}>
+        <div style={{ flex: isMobile && showPanel ? '0 0 40%' : 1, position: 'relative' }}>
           <MapComponent
             start={start}
             deliveries={deliveries.map(d => ({ id: d.id, location: d.location, address: d.address, status: d.status }))}
@@ -577,17 +577,16 @@ function App() {
           style={{
             width: isMobile ? '100%' : '400px',
             maxWidth: isMobile ? '100%' : '400px',
-            position: isMobile ? 'absolute' : 'relative',
-            top: 0,
-            left: 0,
-            height: '100%',
+            position: 'relative',
+            height: isMobile ? '60%' : '100%',
             background: 'white',
             color: '#333',
-            borderLeft: '1px solid #ddd',
+            borderLeft: isMobile ? 'none' : '1px solid #ddd',
+            borderTop: isMobile && showPanel ? '2px solid #2196F3' : 'none',
             overflowY: 'auto',
             display: showPanel ? 'flex' : 'none',
             flexDirection: 'column',
-            boxShadow: '-2px 0 5px rgba(0,0,0,0.05)',
+            boxShadow: isMobile ? '0 -4px 10px rgba(0,0,0,0.1)' : '-2px 0 5px rgba(0,0,0,0.05)',
             zIndex: 1500, // Above Map controls
             flexShrink: 0
           }}
