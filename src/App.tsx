@@ -283,6 +283,48 @@ function App() {
     return `${(meters / 1000).toFixed(2)} km`;
   };
 
+  const handleShareRoute = () => {
+    const pending = deliveries.filter(d => d.status === 'pending');
+    if (pending.length === 0) {
+      alert('No hay paradas pendientes para compartir.');
+      return;
+    }
+
+    let message = `📦 *RUTA DE ENTREGA*\n`;
+    message += `--------------------------\n`;
+    if (routeInfo) {
+      message += `Total: ${pending.length} paradas | ${formatDistance(routeInfo.distance)} | ~${formatDuration(routeInfo.duration)}\n\n`;
+    }
+
+    pending.forEach((d, i) => {
+      const totalAmount = (d.order.amount || 0) + (d.order.deliveryFee || 0);
+      message += `📍 *Parada #${i + 1}*\n`;
+      message += `🏠 Dir: ${d.address}\n`;
+      if (d.customer.name || d.customer.phone) {
+        message += `👤 Cliente: ${d.customer.name || ''} ${d.customer.phone ? `(${d.customer.phone})` : ''}\n`;
+      }
+      if (d.order.items) {
+        message += `📝 Pedido: ${d.order.items}\n`;
+      }
+      message += `💰 Cobrar: *$${totalAmount.toFixed(2)}* (${d.order.isPaid ? '✅ PAGADO' : '❌ POR COBRAR'})\n`;
+      message += `🗺️ GPS: https://www.google.com/maps/search/?api=1&query=${d.location.lat},${d.location.lng}\n`;
+      message += `--------------------------\n`;
+    });
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+
+    // Create a custom confirm / choice? For now, just a confirm to go to WhatsApp
+    const choice = confirm("¿Quieres enviar esta ruta por WhatsApp?\n\n(También puedes copiarla manualmente si lo prefieres)");
+    if (choice) {
+      window.open(whatsappUrl, '_blank');
+    } else {
+      navigator.clipboard.writeText(message).then(() => {
+        alert("Reporte copiado al portapapeles.");
+      });
+    }
+  };
+
   const handleStartDrag = async (newLatLng: LatLng) => {
     setStart(newLatLng);
     if (deliveries.length > 0) {
@@ -552,6 +594,7 @@ function App() {
           <button onClick={() => setShowCoordInput(true)} style={{ background: '#9C27B0', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>+ Coord</button>
           <button onClick={handleManualOptimize} style={{ background: '#FF9800', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Optimizar</button>
           <button onClick={handleReset} style={{ background: '#ff4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}>Reiniciar</button>
+          <button onClick={handleShareRoute} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Compartir Ruta">📤 Compartir</button>
           <button onClick={() => setShowSettings(true)} style={{ background: '#607D8B', color: 'white', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Configurar Precios">⚙️</button>
         </div>
       </header>
