@@ -19,6 +19,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CompletedItem } from './components/CompletedItem';
+import { PendingItem } from './components/PendingItem';
 import { SortableItem } from './components/SortableItem';
 
 import './index.css'
@@ -88,7 +89,11 @@ function App() {
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Minimum 8 pixels of movement before drag starts (essential for mobile scroll)
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -573,100 +578,17 @@ function App() {
               >
                 {pendingDeliveries.map((delivery, idx) => (
                   <SortableItem key={delivery.id} id={delivery.id}>
-                    <div
-                      ref={(el) => { itemRefs.current[delivery.id] = el; }}
-                      style={{
-                        padding: '0.5rem 1rem',
-                        background: highlightedId === delivery.id ? '#fff9c4' : 'transparent',
-                        transition: 'background 0.3s ease',
-                        borderRadius: '4px'
-                      }}
-                    > {/* Wrapper for padding inside sortable block */}
-                      <div style={{ fontWeight: 'bold', color: '#555', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>Parada {idx + 1}</span>
-                          <span style={{ fontSize: '0.7rem', background: '#e3f2fd', color: '#1976D2', padding: '2px 6px', borderRadius: '4px' }}>Pendiente</span>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteDelivery(delivery.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#ff4444',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            fontSize: '1.2rem',
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            lineHeight: 1
-                          }}
-                          title="Eliminar entrega"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <input type="text" placeholder="Dirección" value={delivery.address} onChange={(e) => handleUpdateDelivery(delivery.id, { address: e.target.value })} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box', marginBottom: '8px' }} />
-
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <input type="text" placeholder="Nombre" value={delivery.customer.name} onChange={(e) => handleUpdateDelivery(delivery.id, { customer: { name: e.target.value } })} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }} />
-                        </div>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <input type="text" placeholder="Teléfono" value={delivery.customer.phone} onChange={(e) => handleUpdateDelivery(delivery.id, { customer: { phone: e.target.value } })} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }} />
-                        </div>
-                      </div>
-                      <textarea placeholder="Detalles del Pedido" value={delivery.order.items} onChange={(e) => handleUpdateDelivery(delivery.id, { order: { items: e.target.value } })} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', resize: 'vertical', minHeight: '60px', marginBottom: '8px', boxSizing: 'border-box' }} />
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <div style={{ position: 'relative', flex: 1 }}>
-                            <label style={{ fontSize: '0.7rem', color: '#666', marginLeft: '2px' }}>Pedido</label>
-                            <span style={{ position: 'absolute', left: '8px', top: '26px', color: '#666' }}>$</span>
-                            <input type="number" placeholder="0.00" value={delivery.order.amount || ''} onChange={(e) => handleUpdateDelivery(delivery.id, { order: { amount: parseFloat(e.target.value) } })} style={{ padding: '8px 8px 8px 20px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }} />
-                          </div>
-                          <div style={{ position: 'relative', flex: 1 }}>
-                            <label style={{ fontSize: '0.7rem', color: '#666', marginLeft: '2px' }}>
-                              Delivery {start ? `(${(start.distanceTo(delivery.location) / 1000).toFixed(1)}km)` : ''}
-                            </label>
-                            <span style={{ position: 'absolute', left: '8px', top: '26px', color: '#666' }}>$</span>
-                            <input type="number" placeholder="0.00" value={delivery.order.deliveryFee || ''} onChange={(e) => handleUpdateDelivery(delivery.id, { order: { deliveryFee: parseFloat(e.target.value) } })} style={{ padding: '8px 8px 8px 20px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }} />
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f5f5f5', padding: '8px', borderRadius: '4px' }}>
-                          <span style={{ fontWeight: 'bold', color: '#333' }}>Total: ${((delivery.order.amount || 0) + (delivery.order.deliveryFee || 0)).toFixed(2)}</span>
-                          <div style={{ display: 'flex', gap: '4px', background: '#eee', padding: '2px', borderRadius: '4px' }}>
-                            <button
-                              onClick={() => handleUpdateDelivery(delivery.id, { order: { isPaid: false } })}
-                              style={{ border: 'none', borderRadius: '3px', padding: '4px 8px', fontSize: '0.75rem', cursor: 'pointer', background: !delivery.order.isPaid ? '#ffebee' : 'transparent', color: !delivery.order.isPaid ? '#c62828' : '#757575', fontWeight: !delivery.order.isPaid ? 'bold' : 'normal' }}>
-                              Por Pagar
-                            </button>
-                            <button
-                              onClick={() => handleUpdateDelivery(delivery.id, { order: { isPaid: true } })}
-                              style={{ border: 'none', borderRadius: '3px', padding: '4px 8px', fontSize: '0.75rem', cursor: 'pointer', background: delivery.order.isPaid ? '#e8f5e9' : 'transparent', color: delivery.order.isPaid ? '#2e7d32' : '#757575', fontWeight: delivery.order.isPaid ? 'bold' : 'normal' }}>
-                              Pagado
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <input
-                        type="text"
-                        placeholder="Detalles del pago (ej. Pago Móvil, Efvo...)"
-                        value={delivery.order.paymentDetails || ''}
-                        onChange={(e) => handleUpdateDelivery(delivery.id, { order: { paymentDetails: e.target.value } })}
-                        style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box', marginBottom: '8px', fontSize: '0.9rem', background: '#fafafa' }}
-                      />
-
-                      <button
-                        onClick={() => markAsDelivered(delivery.id)}
-                        style={{ width: '100%', marginTop: '10px', padding: '10px', background: '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
-                      >
-                        Marcar Entregado
-                      </button>
-                    </div>
+                    <PendingItem
+                      delivery={delivery}
+                      idx={idx}
+                      isMobile={isMobile}
+                      highlightedId={highlightedId}
+                      start={start}
+                      onDelete={handleDeleteDelivery}
+                      onUpdate={handleUpdateDelivery}
+                      onMarkDelivered={markAsDelivered}
+                      itemRef={(el) => { itemRefs.current[delivery.id] = el; }}
+                    />
                   </SortableItem>
                 ))}
               </SortableContext>
