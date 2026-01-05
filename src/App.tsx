@@ -450,7 +450,22 @@ function App() {
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <header style={{ padding: '1rem', background: '#333', color: 'white', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
         <h1 style={{ margin: 0, fontSize: '1.2rem' }}>Ruta de Entrega</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          paddingBottom: '4px', // Space for scrollbar if it appears
+          msOverflowStyle: 'none',  /* IE and Edge */
+          scrollbarWidth: 'none',   /* Firefox */
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          {/* Hide scrollbar for Chrome, Safari and Opera */}
+          <style>{`
+            div::-webkit-scrollbar {
+              display: none;
+            }
+          `}</style>
           {/* Toggle Button for Mobile */}
           {isMobile && (
             <button
@@ -463,17 +478,18 @@ function App() {
                 borderRadius: '4px',
                 cursor: 'pointer',
                 fontSize: '0.8rem',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                flexShrink: 0
               }}
             >
               {showPanel ? 'Ver Mapa' : 'Ver Lista'}
             </button>
           )}
-          <button onClick={handleLocateMe} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Ubicarme</button>
-          <button onClick={() => setShowCoordInput(true)} style={{ background: '#9C27B0', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>+ Coord</button>
-          <button onClick={handleManualOptimize} style={{ background: '#FF9800', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Optimizar</button>
-          <button onClick={handleReset} style={{ background: '#ff4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>Reiniciar</button>
-          <button onClick={() => setShowSettings(true)} style={{ background: '#607D8B', color: 'white', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }} title="Configurar Precios">⚙️</button>
+          <button onClick={handleLocateMe} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Ubicarme</button>
+          <button onClick={() => setShowCoordInput(true)} style={{ background: '#9C27B0', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>+ Coord</button>
+          <button onClick={handleManualOptimize} style={{ background: '#FF9800', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Optimizar</button>
+          <button onClick={handleReset} style={{ background: '#ff4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}>Reiniciar</button>
+          <button onClick={() => setShowSettings(true)} style={{ background: '#607D8B', color: 'white', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Configurar Precios">⚙️</button>
         </div>
       </header>
 
