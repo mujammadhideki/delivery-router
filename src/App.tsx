@@ -218,6 +218,38 @@ function App() {
     }));
   };
 
+  const handleMoveDelivery = (id: string, direction: 'up' | 'down') => {
+    setDeliveries(prev => {
+      const currentIndex = prev.findIndex(d => d.id === id);
+      if (currentIndex === -1) return prev;
+
+      let targetIndex = -1;
+      if (direction === 'up') {
+        for (let i = currentIndex - 1; i >= 0; i--) {
+          if (prev[i].status === 'pending') {
+            targetIndex = i;
+            break;
+          }
+        }
+      } else {
+        for (let i = currentIndex + 1; i < prev.length; i++) {
+          if (prev[i].status === 'pending') {
+            targetIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (targetIndex === -1) return prev;
+
+      const newOrder = arrayMove(prev, currentIndex, targetIndex);
+      if (start) {
+        calculateRoute(start, newOrder);
+      }
+      return newOrder;
+    });
+  };
+
   const markAsDelivered = async (id: string) => {
     const updatedList = deliveries.map(d => d.id === id ? { ...d, status: 'delivered' as const } : d);
     setDeliveries(updatedList);
@@ -594,6 +626,9 @@ function App() {
                       onDelete={handleDeleteDelivery}
                       onUpdate={handleUpdateDelivery}
                       onMarkDelivered={markAsDelivered}
+                      onMove={handleMoveDelivery}
+                      isFirst={idx === 0}
+                      isLast={idx === pendingDeliveries.length - 1}
                       itemRef={(el) => { itemRefs.current[delivery.id] = el; }}
                     />
                   </SortableItem>

@@ -11,6 +11,9 @@ interface PendingItemProps {
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: any) => void;
     onMarkDelivered: (id: string) => void;
+    onMove: (id: string, direction: 'up' | 'down') => void;
+    isFirst: boolean;
+    isLast: boolean;
     itemRef: (el: HTMLDivElement | null) => void;
 }
 
@@ -22,6 +25,9 @@ export const PendingItem = ({
     onDelete,
     onUpdate,
     onMarkDelivered,
+    onMove,
+    isFirst,
+    isLast,
     itemRef
 }: PendingItemProps) => {
     const [isOpen, setIsOpen] = useState(true);
@@ -39,7 +45,7 @@ export const PendingItem = ({
             onClick={() => setIsOpen(!isOpen)}
         >
             <div style={{ fontWeight: 'bold', color: '#555', marginBottom: isOpen ? '8px' : '0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                     <span style={{
                         fontSize: '0.8rem',
                         transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -49,28 +55,66 @@ export const PendingItem = ({
                     <span>Parada {idx + 1}</span>
                     <span style={{ fontSize: '0.7rem', background: '#e3f2fd', color: '#1976D2', padding: '2px 6px', borderRadius: '4px' }}>Pendiente</span>
                 </div>
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(delivery.id);
-                    }}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#ff4444',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        fontSize: '1.2rem',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        lineHeight: 1
-                    }}
-                    title="Eliminar entrega"
-                >
-                    ×
-                </button>
+
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {/* Manual Move Buttons */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginRight: '8px' }}>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onMove(delivery.id, 'up'); }}
+                            disabled={isFirst}
+                            style={{
+                                background: '#f0f0f0',
+                                border: '1px solid #ddd',
+                                borderRadius: '3px',
+                                padding: '2px 6px',
+                                cursor: isFirst ? 'not-allowed' : 'pointer',
+                                fontSize: '0.6rem',
+                                opacity: isFirst ? 0.3 : 1
+                            }}
+                            title="Subir"
+                        >
+                            ▲
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onMove(delivery.id, 'down'); }}
+                            disabled={isLast}
+                            style={{
+                                background: '#f0f0f0',
+                                border: '1px solid #ddd',
+                                borderRadius: '3px',
+                                padding: '2px 6px',
+                                cursor: isLast ? 'not-allowed' : 'pointer',
+                                fontSize: '0.6rem',
+                                opacity: isLast ? 0.3 : 1
+                            }}
+                            title="Bajar"
+                        >
+                            ▼
+                        </button>
+                    </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(delivery.id);
+                        }}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#ff4444',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            fontSize: '1.2rem',
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            lineHeight: 1
+                        }}
+                        title="Eliminar entrega"
+                    >
+                        ×
+                    </button>
+                </div>
             </div>
 
             {!isOpen && (
