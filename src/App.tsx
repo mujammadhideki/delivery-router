@@ -260,22 +260,29 @@ function App() {
     };
 
     const onError = (err: GeolocationPositionError) => {
-      // If High Accuracy fails (timeout or other), try Low Accuracy
+      // If High Accuracy fails (timeout or other), try Low Accuracy with much longer timeout
       console.warn("High accuracy failed, trying low accuracy...", err.message);
+
+      // For the second attempt, we use a very generous timeout (1 minute)
+      // and allow cached results up to 5 minutes old to avoid unnecessary wait on PC.
       navigator.geolocation.getCurrentPosition(
         onSuccess,
         (finalErr) => {
-          alert(`No pudimos ubicarte automáticamente (Error: ${finalErr.message}).\n\nPor favor, usa el mapa para arrastrar el punto de inicio 'S' a tu ubicación.`);
+          if (finalErr.code === finalErr.TIMEOUT) {
+            alert("La ubicación automática está tardando demasiado en tu PC.\n\nPrueba a escribir tu dirección o el nombre de tu ciudad en el botón '+ Coord' o arrastra el punto 'S' manualmente.");
+          } else {
+            alert(`No pudimos ubicarte (Error: ${finalErr.message}).\n\nPor favor, arrastra el punto de inicio 'S' a tu ubicación.`);
+          }
         },
-        { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }
+        { enableHighAccuracy: false, timeout: 60000, maximumAge: 300000 }
       );
     };
 
-    // First try High Accuracy with a reasonable timeout
+    // First try High Accuracy with 15 seconds
     navigator.geolocation.getCurrentPosition(
       onSuccess,
       onError,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
