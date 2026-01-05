@@ -567,6 +567,7 @@ function App() {
             onMarkerDragEnd={handleMarkerDrag}
             onStartDragEnd={handleStartDrag}
             onMarkerClick={handleMarkerClick}
+            isMobile={isMobile}
           />
           {loading && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '1rem', borderRadius: '8px', zIndex: 2000 }}>Calculando Ruta...</div>}
           {!start && !loading && <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(76, 175, 80, 0.95)', padding: '0.8rem 1.5rem', borderRadius: '30px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 1000, pointerEvents: 'none', color: 'white', fontSize: '0.95rem', fontWeight: 600 }}>Toca para fijar Punto de Partida</div>}
