@@ -61,6 +61,8 @@ function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showCoordInput, setShowCoordInput] = useState(false);
   const [coordInputText, setCoordInputText] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
 
   // Pricing Rules State
   const [showSettings, setShowSettings] = useState(false);
@@ -311,18 +313,8 @@ function App() {
       message += `--------------------------\n`;
     });
 
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
-
-    // Create a custom confirm / choice? For now, just a confirm to go to WhatsApp
-    const choice = confirm("¿Quieres enviar esta ruta por WhatsApp?\n\n(También puedes copiarla manualmente si lo prefieres)");
-    if (choice) {
-      window.open(whatsappUrl, '_blank');
-    } else {
-      navigator.clipboard.writeText(message).then(() => {
-        alert("Reporte copiado al portapapeles.");
-      });
-    }
+    setShareMessage(message);
+    setShowShareModal(true);
   };
 
   const handleStartDrag = async (newLatLng: LatLng) => {
@@ -784,6 +776,46 @@ function App() {
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '1rem' }}>
               <button onClick={() => setShowSettings(false)} style={{ padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Listo</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Share Modal */}
+      {showShareModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5000, padding: '20px' }} onClick={() => setShowShareModal(false)}>
+          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Compartir Ruta</h3>
+            <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1.5rem', textAlign: 'center' }}>Selecciona cómo quieres compartir los detalles de la ruta con el motorizado:</p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                onClick={() => {
+                  window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, '_blank');
+                  setShowShareModal(false);
+                }}
+                style={{ background: '#25D366', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                🟢 Enviar por WhatsApp
+              </button>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareMessage).then(() => {
+                    alert("¡Reporte copiado al portapapeles!");
+                    setShowShareModal(false);
+                  });
+                }}
+                style={{ background: '#2196F3', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                📋 Copiar al Portapapeles
+              </button>
+
+              <button
+                onClick={() => setShowShareModal(false)}
+                style={{ background: '#f5f5f5', color: '#666', border: 'none', padding: '10px', borderRadius: '8px', marginTop: '4px', cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
