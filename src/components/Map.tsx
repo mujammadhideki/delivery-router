@@ -2,7 +2,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap 
 import type { LatLngExpression, LatLng } from 'leaflet'
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 
 // Custom Icon Generator
 const createCustomIcon = (type: 'start' | 'next' | 'normal', number?: number) => {
@@ -73,25 +73,16 @@ const LocationHandler = ({
 }: {
     onLocationSelect: (latlng: LatLng) => void
 }) => {
-    // Phase 32 Fix: Use stable ref to avoid closure trapping in Leaflet event listeners
-    const selectRef = useRef(onLocationSelect);
-    useEffect(() => {
-        selectRef.current = onLocationSelect;
-    }, [onLocationSelect]);
-
     useMapEvents({
         click(e) {
-            selectRef.current(e.latlng);
+            onLocationSelect(e.latlng);
         },
     });
     return null;
 };
 
-const DraggableMarker = ({ position, icon, children, onDragEnd, onClick, isMobile }: any) => {
+const DraggableMarker = ({ position, icon, children, onDragEnd, onClick }: any) => {
     const markerRef = useRef<L.Marker>(null);
-    const [isDraggable, setIsDraggable] = useState(!isMobile); // For PC, always draggable
-    const timerRef = useRef<any>(null);
-
     const eventHandlers = useMemo(
         () => ({
             dragend() {
@@ -99,64 +90,17 @@ const DraggableMarker = ({ position, icon, children, onDragEnd, onClick, isMobil
                 if (marker != null) {
                     onDragEnd(marker.getLatLng());
                 }
-                // Lock dragging again after move on mobile
-                if (isMobile) setIsDraggable(false);
             },
-            click(e: any) {
+            click() {
                 if (onClick) onClick();
-                L.DomEvent.stopPropagation(e);
-            },
-            mousedown() {
-                if (isMobile) {
-                    timerRef.current = setTimeout(() => {
-                        setIsDraggable(true);
-                        // Provide subtle haptic feedback feeling by enabling dragging
-                    }, 1500); // 1.5 second hold to move stop
-                }
-            },
-            mouseup() {
-                if (timerRef.current) clearTimeout(timerRef.current);
             }
         }),
-        [onDragEnd, onClick, isMobile],
+        [onDragEnd, onClick],
     );
-
-    // Alternative touch handling for robustness on mobile
-    useEffect(() => {
-        const marker = markerRef.current;
-        if (!marker || !isMobile) return;
-
-        const onTouchStart = () => {
-            timerRef.current = setTimeout(() => {
-                setIsDraggable(true);
-            }, 1000);
-        };
-
-        const onTouchEnd = () => {
-            if (timerRef.current) clearTimeout(timerRef.current);
-        };
-
-        const onTouchMove = () => {
-            // If moved while waiting for long press, cancel it to allow panning
-            if (!isDraggable && timerRef.current) {
-                clearTimeout(timerRef.current);
-            }
-        };
-
-        marker.on('touchstart', onTouchStart);
-        marker.on('touchend', onTouchEnd);
-        marker.on('touchmove', onTouchMove);
-
-        return () => {
-            marker.off('touchstart', onTouchStart);
-            marker.off('touchend', onTouchEnd);
-            marker.off('touchmove', onTouchMove);
-        };
-    }, [isMobile, isDraggable]);
 
     return (
         <Marker
-            draggable={isDraggable}
+            draggable={true}
             eventHandlers={eventHandlers}
             position={position}
             ref={markerRef}
@@ -166,7 +110,7 @@ const DraggableMarker = ({ position, icon, children, onDragEnd, onClick, isMobil
     )
 }
 
-const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect, onMarkerDragEnd, onStartDragEnd, onMarkerClick, isMobile }: MapProps & { isMobile: boolean }) => {
+const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect, onMarkerDragEnd, onStartDragEnd, onMarkerClick }: MapProps) => {
     const defaultPosition: LatLngExpression = [10.4806, -66.8983]; // Caracas, Venezuela
 
     // Filter only pending for index calculation logic if needed, 
@@ -192,7 +136,6 @@ const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect
                     position={start}
                     icon={createCustomIcon('start')}
                     onDragEnd={(pos: LatLng) => onStartDragEnd && onStartDragEnd(pos)}
-                    isMobile={isMobile}
                 >
                     <Popup>Punto de Partida (Inicio)<br />Arrastra para ajustar</Popup>
                 </DraggableMarker>
@@ -219,7 +162,6 @@ const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect
                         icon={createCustomIcon(type, numberDisplay)}
                         onDragEnd={(newPos: LatLng) => onMarkerDragEnd(d.id, newPos)}
                         onClick={() => onMarkerClick && onMarkerClick(d.id)}
-                        isMobile={isMobile}
                     >
                         <Popup>
                             <strong>Parada #{numberDisplay}</strong><br />
