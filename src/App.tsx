@@ -8,6 +8,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent
@@ -91,7 +92,13 @@ function App() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Minimum 8 pixels of movement before drag starts (essential for mobile scroll)
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 1000, // 1 second long press as requested
+        tolerance: 5, // Allow slight movement during press
       },
     }),
     useSensor(KeyboardSensor, {
