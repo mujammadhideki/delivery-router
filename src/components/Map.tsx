@@ -111,7 +111,7 @@ const DraggableMarker = ({ position, icon, children, onDragEnd, onClick }: any) 
 }
 
 const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect, onMarkerDragEnd, onStartDragEnd, onMarkerClick }: MapProps) => {
-    const defaultPosition: LatLngExpression = [40.7128, -74.0060];
+    const defaultPosition: LatLngExpression = [10.4806, -66.8983]; // Caracas, Venezuela
 
     // Filter only pending for index calculation logic if needed, 
     // but usually we display all. 
