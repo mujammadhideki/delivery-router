@@ -24,7 +24,7 @@ import { SortableItem } from './components/SortableItem';
 
 import './index.css'
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyBwECyovYX6Ri7z2-54wXV10m4e6CtiMms';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 export interface Delivery {
   id: string;
