@@ -1,13 +1,24 @@
 import { useState } from 'react';
 import type { Delivery } from '../App';
-import { LatLng } from 'leaflet';
+import type { Point } from './Map';
+
+const calculateDistance = (p1: Point, p2: Point) => {
+    const R = 6371; // km
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 interface PendingItemProps {
     delivery: Delivery;
     idx: number;
     isMobile: boolean;
     highlightedId: string | null;
-    start: LatLng | null;
+    start: Point | null;
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: any) => void;
     onMarkDelivered: (id: string) => void;
@@ -157,7 +168,7 @@ export const PendingItem = ({
                         </div>
                         <div style={{ position: 'relative', flex: 1 }}>
                             <label style={{ fontSize: '0.7rem', color: '#666', marginLeft: '2px' }}>
-                                Delivery {start ? `(${(start.distanceTo(delivery.location) / 1000).toFixed(1)}km)` : ''}
+                                Delivery {start ? `(${calculateDistance(start, delivery.location).toFixed(1)}km)` : ''}
                             </label>
                             <span style={{ position: 'absolute', left: '8px', top: '26px', color: '#666' }}>$</span>
                             <input type="number" placeholder="0.00" value={delivery.order.deliveryFee || ''} onChange={(e) => onUpdate(delivery.id, { order: { deliveryFee: parseFloat(e.target.value) } })} style={{ padding: '8px 8px 8px 20px', border: '1px solid #ddd', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }} />

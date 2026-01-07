@@ -1,181 +1,121 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet'
-import type { LatLngExpression, LatLng } from 'leaflet'
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { useEffect, useRef, useMemo } from 'react';
+import { Map, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
+import { useEffect, useCallback } from 'react';
 
-// Custom Icon Generator
-const createCustomIcon = (type: 'start' | 'next' | 'normal', number?: number) => {
-    let color = '#F44336'; // Red (Normal)
-    if (type === 'start') color = '#4CAF50'; // Green
-    if (type === 'next') color = '#FF9800'; // Orange
-
-    const html = `
-        <div style="
-            background-color: ${color};
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            border: 2px solid white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-family: sans-serif;
-            font-size: 14px;
-        ">
-            ${type === 'start' ? 'S' : number}
-        </div>
-        <div style="
-            width: 0; 
-            height: 0; 
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-top: 8px solid ${color};
-            margin: -2px auto 0;
-        "></div>
-    `;
-
-    return L.divIcon({
-        className: 'custom-pin',
-        html: html,
-        iconSize: [30, 42],
-        iconAnchor: [15, 42],
-        popupAnchor: [0, -45]
-    });
-};
-
-const MapViewUpdater = ({ center }: { center: LatLngExpression | null }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (center) {
-            map.flyTo(center, map.getZoom());
-        }
-    }, [center, map]);
-    return null;
+export interface Point {
+    lat: number;
+    lng: number;
 }
 
 interface MapProps {
-    start: LatLng | null;
-    deliveries: { id: string; location: LatLng; address: string; status: 'pending' | 'delivered' }[];
-    routePath: LatLngExpression[];
-    centerOn: LatLngExpression | null;
-    onLocationSelect: (latlng: LatLng) => void;
-    onMarkerDragEnd: (id: string, latlng: LatLng) => void;
-    onStartDragEnd?: (latlng: LatLng) => void;
+    start: Point | null;
+    deliveries: { id: string; location: Point; address: string; status: 'pending' | 'delivered' }[];
+    routePath: Point[];
+    centerOn: Point | null;
+    onLocationSelect: (latlng: Point) => void;
+    onMarkerDragEnd: (id: string, latlng: Point) => void;
+    onStartDragEnd?: (latlng: Point) => void;
     onMarkerClick?: (id: string) => void;
 }
 
-const LocationHandler = ({
-    onLocationSelect
-}: {
-    onLocationSelect: (latlng: LatLng) => void
+const DraggableMarker = ({ position, title, color, label, onDragEnd, onClick }: {
+    position: Point,
+    title?: string,
+    color?: string,
+    label?: string,
+    onDragEnd: (pos: Point) => void,
+    onClick?: () => void
 }) => {
-    useMapEvents({
-        click(e) {
-            onLocationSelect(e.latlng);
-        },
-    });
+    return (
+        <AdvancedMarker
+            position={position}
+            draggable={true}
+            onDragEnd={(e) => {
+                if (e.latLng) {
+                    onDragEnd({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+                }
+            }}
+            onClick={onClick}
+            title={title}
+        >
+            <Pin background={color || '#F44336'} glyph={label} borderColor={'#fff'} />
+        </AdvancedMarker>
+    );
+};
+
+// Component to handle route path drawing since react-google-maps doesn't have a direct Polyline component yet
+const Polyline = ({ path }: { path: Point[] }) => {
+    const map = useMap();
+
+    useEffect(() => {
+        if (!map || path.length === 0) return;
+
+        const polyline = new google.maps.Polyline({
+            path,
+            geodesic: true,
+            strokeColor: '#2196F3',
+            strokeOpacity: 0.8,
+            strokeWeight: 6,
+            map: map
+        });
+
+        return () => {
+            polyline.setMap(null);
+        };
+    }, [map, path]);
+
     return null;
 };
 
-const DraggableMarker = ({ position, icon, children, onDragEnd, onClick }: any) => {
-    const markerRef = useRef<L.Marker>(null);
-    const eventHandlers = useMemo(
-        () => ({
-            dragend() {
-                const marker = markerRef.current;
-                if (marker != null) {
-                    onDragEnd(marker.getLatLng());
-                }
-            },
-            click() {
-                if (onClick) onClick();
-            }
-        }),
-        [onDragEnd, onClick],
-    );
-
-    return (
-        <Marker
-            draggable={true}
-            eventHandlers={eventHandlers}
-            position={position}
-            ref={markerRef}
-            icon={icon}>
-            {children}
-        </Marker>
-    )
-}
-
 const MapComponent = ({ start, deliveries, routePath, centerOn, onLocationSelect, onMarkerDragEnd, onStartDragEnd, onMarkerClick }: MapProps) => {
-    const defaultPosition: LatLngExpression = [10.4806, -66.8983]; // Caracas, Venezuela
+    const defaultPosition = { lat: 10.4806, lng: -66.8983 }; // Caracas
 
-    // Filter only pending for index calculation logic if needed, 
-    // but usually we display all. 
-    // Let's create visual props based on the full list index? 
-    // Actually, visual hierarchy usually implies "Order of visit".
-    // So 'next' is the first PENDING delivery.
-
-    const pendingDeliveries = deliveries.filter(d => d.status === 'pending');
-    // const completedDeliveries = deliveries.filter(d => d.status === 'delivered');
+    const handleMapClick = useCallback((e: any) => {
+        if (e.detail.latLng) {
+            onLocationSelect(e.detail.latLng);
+        }
+    }, [onLocationSelect]);
 
     return (
-        <MapContainer center={defaultPosition} zoom={13} scrollWheelZoom={true} className="leaflet-container" zoomControl={false}>
-            <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <LocationHandler onLocationSelect={onLocationSelect} />
-            <MapViewUpdater center={centerOn} />
-
+        <Map
+            style={{ width: '100%', height: '100%' }}
+            defaultCenter={defaultPosition}
+            defaultZoom={13}
+            gestureHandling={'greedy'}
+            disableDefaultUI={true}
+            onClick={handleMapClick}
+            center={centerOn}
+            mapId={'DEMO_MAP_ID'} // Advanced markers require a mapId
+        >
             {start && (
                 <DraggableMarker
                     position={start}
-                    icon={createCustomIcon('start')}
-                    onDragEnd={(pos: LatLng) => onStartDragEnd && onStartDragEnd(pos)}
-                >
-                    <Popup>Punto de Partida (Inicio)<br />Arrastra para ajustar</Popup>
-                </DraggableMarker>
+                    label={'S'}
+                    color={'#4CAF50'}
+                    title={'Punto de Partida'}
+                    onDragEnd={(pos) => onStartDragEnd && onStartDragEnd(pos)}
+                />
             )}
 
-            {deliveries.map((d, _) => {
-                // Determine visual status
-                let type: 'next' | 'normal' = 'normal';
-                let numberDisplay = 0;
-
-                if (d.status === 'pending') {
-                    const pendingIdx = pendingDeliveries.findIndex(p => p.id === d.id);
-                    if (pendingIdx === 0) type = 'next';
-                    numberDisplay = pendingIdx + 1;
-                } else {
-                    // Completed items
-                    return null;
-                }
+            {deliveries.map((d) => {
+                if (d.status === 'delivered') return null;
+                const pendingIdx = deliveries.filter(del => del.status === 'pending').findIndex(p => p.id === d.id);
 
                 return (
                     <DraggableMarker
                         key={d.id}
                         position={d.location}
-                        icon={createCustomIcon(type, numberDisplay)}
-                        onDragEnd={(newPos: LatLng) => onMarkerDragEnd(d.id, newPos)}
+                        label={(pendingIdx + 1).toString()}
+                        color={pendingIdx === 0 ? '#FF9800' : '#F44336'}
+                        title={`Parada #${pendingIdx + 1}`}
+                        onDragEnd={(newPos) => onMarkerDragEnd(d.id, newPos)}
                         onClick={() => onMarkerClick && onMarkerClick(d.id)}
-                    >
-                        <Popup>
-                            <strong>Parada #{numberDisplay}</strong><br />
-                            {d.address}
-                        </Popup>
-                    </DraggableMarker>
+                    />
                 );
             })}
 
-            {routePath.length > 0 && (
-                <Polyline positions={routePath} color="#2196F3" weight={6} opacity={0.8} />
-            )}
-        </MapContainer>
-    )
-}
+            <Polyline path={routePath} />
+        </Map>
+    );
+};
 
-export default MapComponent
+export default MapComponent;

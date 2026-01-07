@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import MapComponent from './components/Map'
-import { getRoute, decodePolyline } from './services/osrm';
-import { getAddress, searchLocation } from './services/geocoding';
-import type { LatLng, LatLngExpression } from 'leaflet';
+import MapComponent, { type Point } from './components/Map'
+import { googleGetRoute, googleGetAddress, googleSearchLocation } from './services/googleMaps';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import {
   DndContext,
   closestCenter,
@@ -25,9 +24,11 @@ import { SortableItem } from './components/SortableItem';
 
 import './index.css'
 
+const GOOGLE_MAPS_API_KEY = 'AIzaSyBwECyovYX6Ri7z2-54wXV10m4e6CtiMms';
+
 export interface Delivery {
   id: string;
-  location: LatLng;
+  location: Point;
   address: string;
   customer: {
     name: string;
@@ -43,18 +44,29 @@ export interface Delivery {
   status: 'pending' | 'delivered';
 }
 
+const calculateDistance = (p1: Point, p2: Point) => {
+  const R = 6371; // km
+  const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+  const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 interface PricingRule {
   maxKm: number;
   price: number;
 }
 
 function App() {
-  const [start, setStart] = useState<LatLng | null>(null);
+  const [start, setStart] = useState<Point | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [routePath, setRoutePath] = useState<LatLngExpression[]>([]);
+  const [routePath, setRoutePath] = useState<Point[]>([]);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mapCenter, setMapCenter] = useState<LatLngExpression | null>(null);
+  const [mapCenter, setMapCenter] = useState<Point | null>(null);
 
   // Mobile & Toggle State
   const [showPanel, setShowPanel] = useState(true);
@@ -108,7 +120,7 @@ function App() {
     })
   );
 
-  const sortDeliveriesRef = (pickup: LatLng, points: Delivery[]): Delivery[] => {
+  const sortDeliveriesRef = (pickup: Point, points: Delivery[]): Delivery[] => {
     const pending = points.filter(d => d.status === 'pending');
     const completed = points.filter(d => d.status === 'delivered');
 
@@ -123,7 +135,7 @@ function App() {
       let minDist = Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
-        const d = current.distanceTo(remaining[i].location);
+        const d = calculateDistance(current, remaining[i].location);
         if (d < minDist) {
           minDist = d;
           nearestIdx = i;
@@ -139,7 +151,7 @@ function App() {
     return [...sortedPending, ...completed];
   };
 
-  const calculateRoute = async (pickup: LatLng, allDeliveries: Delivery[]) => {
+  const calculateRoute = async (pickup: Point, allDeliveries: Delivery[]) => {
     const pending = allDeliveries.filter(d => d.status === 'pending');
 
     if (!pickup || pending.length === 0) {
@@ -149,22 +161,21 @@ function App() {
     }
 
     setLoading(true);
-    const points: [number, number][] = [
-      [pickup.lat, pickup.lng],
-      ...pending.map(d => [d.location.lat, d.location.lng] as [number, number])
+    const points = [
+      pickup,
+      ...pending.map(d => d.location)
     ];
 
-    const result = await getRoute(points);
+    const result = await googleGetRoute(points);
     setLoading(false);
 
     if (result) {
       setRouteInfo({ distance: result.distance, duration: result.duration });
-      const decoded = decodePolyline(result.geometry);
-      setRoutePath(decoded);
+      setRoutePath(result.path);
     }
   };
 
-  const handleLocationSelect = async (latlng: LatLng) => {
+  const handleLocationSelect = async (latlng: Point) => {
     if (!start) {
       setStart(latlng);
       setDeliveries([]);
@@ -176,7 +187,7 @@ function App() {
       // Calculate initial delivery fee
       let fee = 0;
       if (start) {
-        const distKm = start.distanceTo(latlng) / 1000;
+        const distKm = calculateDistance(start, latlng);
         const rule = pricingRules.find(r => distKm <= r.maxKm);
         fee = rule ? rule.price : pricingRules[pricingRules.length - 1].price;
       }
@@ -194,7 +205,7 @@ function App() {
       const currentList = [...deliveries, newDelivery];
       setDeliveries(currentList);
 
-      getAddress(latlng.lat, latlng.lng).then(address => {
+      googleGetAddress(latlng.lat, latlng.lng).then(address => {
         handleUpdateDelivery(newDelivery.id, { address });
       });
 
@@ -269,6 +280,10 @@ function App() {
   };
 
 
+  const formatDistance = (meters: number) => {
+    return `${(meters / 1000).toFixed(2)} km`;
+  };
+
   const handleReset = () => {
     setStart(null);
     setDeliveries([]);
@@ -279,10 +294,6 @@ function App() {
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     return `${minutes} min`;
-  };
-
-  const formatDistance = (meters: number) => {
-    return `${(meters / 1000).toFixed(2)} km`;
   };
 
   const handleShareRoute = () => {
@@ -317,7 +328,7 @@ function App() {
     setShowShareModal(true);
   };
 
-  const handleStartDrag = async (newLatLng: LatLng) => {
+  const handleStartDrag = async (newLatLng: Point) => {
     setStart(newLatLng);
     if (deliveries.length > 0) {
       await calculateRoute(newLatLng, deliveries);
@@ -332,8 +343,8 @@ function App() {
 
     const onSuccess = (pos: GeolocationPosition) => {
       const { latitude, longitude } = pos.coords;
-      const latlng = { lat: latitude, lng: longitude } as LatLng;
-      setMapCenter([latitude, longitude]);
+      const latlng = { lat: latitude, lng: longitude };
+      setMapCenter(latlng);
       setStart(latlng);
     };
 
@@ -443,7 +454,7 @@ function App() {
     else {
       setCoordInputText('Buscando ubicación...');
       try {
-        const result = await searchLocation(input);
+        const result = await googleSearchLocation(input);
         if (result && isValid(result.lat, result.lng)) {
           lat = result.lat;
           lng = result.lng;
@@ -461,7 +472,7 @@ function App() {
     }
 
     if (lat !== null && lng !== null && isValid(lat, lng)) {
-      handleLocationSelect({ lat, lng } as LatLng);
+      handleLocationSelect({ lat, lng });
       setShowCoordInput(false);
       setCoordInputText('');
     }
@@ -519,7 +530,7 @@ function App() {
     setTimeout(() => setHighlightedId(null), 2000);
   };
 
-  const handleMarkerDrag = async (id: string, newLatLng: LatLng) => {
+  const handleMarkerDrag = async (id: string, newLatLng: Point) => {
     // Update location in state
     const updatedList = deliveries.map(d => {
       if (d.id === id) {
@@ -530,7 +541,7 @@ function App() {
     setDeliveries(updatedList);
 
     // Fetch new address
-    getAddress(newLatLng.lat, newLatLng.lng).then(address => {
+    googleGetAddress(newLatLng.lat, newLatLng.lng).then(address => {
       handleUpdateDelivery(id, { address });
     });
 
@@ -544,284 +555,286 @@ function App() {
   const completedDeliveries = deliveries.filter(d => d.status === 'delivered');
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <header style={{ padding: '1rem', background: '#333', color: 'white', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-        <h1 style={{ margin: 0, fontSize: '1.2rem' }}>Ruta de Entrega</h1>
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap',
-          paddingBottom: '4px', // Space for scrollbar if it appears
-          msOverflowStyle: 'none',  /* IE and Edge */
-          scrollbarWidth: 'none',   /* Firefox */
-          WebkitOverflowScrolling: 'touch'
-        }}>
-          {/* Hide scrollbar for Chrome, Safari and Opera */}
-          <style>{`
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <header style={{ padding: '1rem', background: '#333', color: 'white', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+          <h1 style={{ margin: 0, fontSize: '1.2rem' }}>Ruta de Entrega</h1>
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            paddingBottom: '4px', // Space for scrollbar if it appears
+            msOverflowStyle: 'none',  /* IE and Edge */
+            scrollbarWidth: 'none',   /* Firefox */
+            WebkitOverflowScrolling: 'touch'
+          }}>
+            {/* Hide scrollbar for Chrome, Safari and Opera */}
+            <style>{`
             div::-webkit-scrollbar {
               display: none;
             }
           `}</style>
-          {/* Toggle Button for Mobile */}
-          {isMobile && (
-            <button
-              onClick={() => setShowPanel(!showPanel)}
-              style={{
-                background: showPanel ? '#fff' : '#2196F3',
-                color: showPanel ? '#333' : '#fff',
-                border: 'none',
-                padding: '0.4rem 0.8rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-                fontWeight: 'bold',
-                flexShrink: 0
-              }}
-            >
-              {showPanel ? 'Mapa Solo' : 'Dividir'}
-            </button>
-          )}
-          <button onClick={handleLocateMe} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Ubicarme</button>
-          <button onClick={() => setShowCoordInput(true)} style={{ background: '#9C27B0', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>+ Coord</button>
-          <button onClick={handleManualOptimize} style={{ background: '#FF9800', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Optimizar</button>
-          <button onClick={handleReset} style={{ background: '#ff4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}>Reiniciar</button>
-          <button onClick={handleShareRoute} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Compartir Ruta">📤 Compartir</button>
-          <button onClick={() => setShowSettings(true)} style={{ background: '#607D8B', color: 'white', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Configurar Precios">⚙️</button>
-        </div>
-      </header>
-
-      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: 'hidden' }}>
-        <div style={{ flex: isMobile && showPanel ? '0 0 40%' : 1, position: 'relative' }}>
-          <MapComponent
-            start={start}
-            deliveries={deliveries.map(d => ({ id: d.id, location: d.location, address: d.address, status: d.status }))}
-            routePath={routePath}
-            centerOn={mapCenter}
-            onLocationSelect={handleLocationSelect}
-            onMarkerDragEnd={handleMarkerDrag}
-            onStartDragEnd={handleStartDrag}
-            onMarkerClick={handleMarkerClick}
-          />
-          {loading && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '1rem', borderRadius: '8px', zIndex: 2000 }}>Calculando Ruta...</div>}
-          {!start && !loading && <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(76, 175, 80, 0.95)', padding: '0.8rem 1.5rem', borderRadius: '30px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 1000, pointerEvents: 'none', color: 'white', fontSize: '0.95rem', fontWeight: 600 }}>Toca para fijar Punto de Partida</div>}
-          {start && !loading && <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(33, 150, 243, 0.95)', padding: '0.8rem 1.5rem', borderRadius: '30px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 1000, pointerEvents: 'none', color: 'white', fontSize: '0.95rem', fontWeight: 600 }}>Toca para agregar Entrega</div>}
-        </div>
-
-        <div
-          style={{
-            width: isMobile ? '100%' : '400px',
-            maxWidth: isMobile ? '100%' : '400px',
-            position: 'relative',
-            height: isMobile ? '60%' : '100%',
-            background: 'white',
-            color: '#333',
-            borderLeft: isMobile ? 'none' : '1px solid #ddd',
-            borderTop: isMobile && showPanel ? '2px solid #2196F3' : 'none',
-            overflowY: 'auto',
-            display: showPanel ? 'flex' : 'none',
-            flexDirection: 'column',
-            boxShadow: isMobile ? '0 -4px 10px rgba(0,0,0,0.1)' : '-2px 0 5px rgba(0,0,0,0.05)',
-            zIndex: 1500, // Above Map controls
-            flexShrink: 0
-          }}
-        >
-          <div style={{ padding: '1rem', borderBottom: '1px solid #eee', background: '#f9f9f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '1rem', color: '#333' }}>Detalles de la Ruta</h2>
-          </div>
-
-          <div style={{ flex: 1, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {routeInfo && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid #eee' }}>
-                <div><div style={{ fontSize: '0.75rem', color: '#666' }}>Distancia Total</div><div style={{ fontWeight: 'bold' }}>{formatDistance(routeInfo.distance)}</div></div>
-                <div><div style={{ fontSize: '0.75rem', color: '#666' }}>Tiempo Est.</div><div style={{ fontWeight: 'bold' }}>{formatDuration(routeInfo.duration)}</div></div>
-              </div>
-            )}
-
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '0.9rem', color: '#2196F3' }}>Pendientes ({pendingDeliveries.length})</h3>
-
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={pendingDeliveries.map(d => d.id)}
-                strategy={verticalListSortingStrategy}
+            {/* Toggle Button for Mobile */}
+            {isMobile && (
+              <button
+                onClick={() => setShowPanel(!showPanel)}
+                style={{
+                  background: showPanel ? '#fff' : '#2196F3',
+                  color: showPanel ? '#333' : '#fff',
+                  border: 'none',
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  flexShrink: 0
+                }}
               >
-                {pendingDeliveries.map((delivery, idx) => (
-                  <SortableItem key={delivery.id} id={delivery.id}>
-                    <PendingItem
-                      delivery={delivery}
-                      idx={idx}
-                      isMobile={isMobile}
-                      highlightedId={highlightedId}
-                      start={start}
-                      onDelete={handleDeleteDelivery}
-                      onUpdate={handleUpdateDelivery}
-                      onMarkDelivered={markAsDelivered}
-                      onMove={handleMoveDelivery}
-                      isFirst={idx === 0}
-                      isLast={idx === pendingDeliveries.length - 1}
-                      itemRef={(el) => { itemRefs.current[delivery.id] = el; }}
-                    />
-                  </SortableItem>
-                ))}
-              </SortableContext>
-            </DndContext>
-
-
-
-            {completedDeliveries.length > 0 && (
-              <>
-                <h3 style={{ margin: '15px 0 5px 0', fontSize: '0.9rem', color: '#4CAF50' }}>Completados ({completedDeliveries.length})</h3>
-                {completedDeliveries.map((delivery) => (
-                  <CompletedItem
-                    key={delivery.id}
-                    delivery={delivery}
-                    onDelete={handleDeleteDelivery}
-                    onUndo={markAsPending}
-                  />
-                ))}
-              </>
+                {showPanel ? 'Mapa Solo' : 'Dividir'}
+              </button>
             )}
+            <button onClick={handleLocateMe} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Ubicarme</button>
+            <button onClick={() => setShowCoordInput(true)} style={{ background: '#9C27B0', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>+ Coord</button>
+            <button onClick={handleManualOptimize} style={{ background: '#FF9800', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }}>Optimizar</button>
+            <button onClick={handleReset} style={{ background: '#ff4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}>Reiniciar</button>
+            <button onClick={handleShareRoute} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Compartir Ruta">📤 Compartir</button>
+            <button onClick={() => setShowSettings(true)} style={{ background: '#607D8B', color: 'white', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0 }} title="Configurar Precios">⚙️</button>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {/* Modal coords input */}
-      {showCoordInput && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', zIndex: 3000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', minWidth: '300px' }}>
-            <h3 style={{ marginTop: 0 }}>Agregar Ubicación</h3>
-            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '10px' }}>
-              Pega coordenadas, un enlace de Google Maps, o un <strong>Plus Code</strong> (ej: G424+J49 Caracas)
-            </p>
-            <input
-              autoFocus
-              type="text"
-              value={coordInputText}
-              onChange={(e) => setCoordInputText(e.target.value)}
-              placeholder="Ej: 10.49, -66.89 o Plus Code"
-              style={{ width: '100%', padding: '0.5rem', fontSize: '1rem', marginBottom: '1rem', boxSizing: 'border-box' }}
-              onKeyDown={(e) => e.key === 'Enter' && handleCoordinateSubmit()}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: 'hidden' }}>
+          <div style={{ flex: isMobile && showPanel ? '0 0 40%' : 1, position: 'relative' }}>
+            <MapComponent
+              start={start}
+              deliveries={deliveries.map(d => ({ id: d.id, location: d.location, address: d.address, status: d.status }))}
+              routePath={routePath}
+              centerOn={mapCenter}
+              onLocationSelect={handleLocationSelect}
+              onMarkerDragEnd={handleMarkerDrag}
+              onStartDragEnd={handleStartDrag}
+              onMarkerClick={handleMarkerClick}
             />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowCoordInput(false)} style={{ padding: '0.5rem 1rem', background: '#ccc', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={handleCoordinateSubmit} style={{ padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Agregar</button>
-            </div>
+            {loading && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '1rem', borderRadius: '8px', zIndex: 2000 }}>Calculando Ruta...</div>}
+            {!start && !loading && <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(76, 175, 80, 0.95)', padding: '0.8rem 1.5rem', borderRadius: '30px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 1000, pointerEvents: 'none', color: 'white', fontSize: '0.95rem', fontWeight: 600 }}>Toca para fijar Punto de Partida</div>}
+            {start && !loading && <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(33, 150, 243, 0.95)', padding: '0.8rem 1.5rem', borderRadius: '30px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 1000, pointerEvents: 'none', color: 'white', fontSize: '0.95rem', fontWeight: 600 }}>Toca para agregar Entrega</div>}
           </div>
-        </div>
-      )}
 
-      {/* Modal Config Pricing */}
-      {showSettings && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', zIndex: 4000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', width: '90%', maxWidth: '400px', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h3 style={{ marginTop: 0 }}>Configurar Precios</h3>
-            <p style={{ fontSize: '0.9rem', color: '#666' }}>Define reglas de precio según distancia.</p>
+          <div
+            style={{
+              width: isMobile ? '100%' : '400px',
+              maxWidth: isMobile ? '100%' : '400px',
+              position: 'relative',
+              height: isMobile ? '60%' : '100%',
+              background: 'white',
+              color: '#333',
+              borderLeft: isMobile ? 'none' : '1px solid #ddd',
+              borderTop: isMobile && showPanel ? '2px solid #2196F3' : 'none',
+              overflowY: 'auto',
+              display: showPanel ? 'flex' : 'none',
+              flexDirection: 'column',
+              boxShadow: isMobile ? '0 -4px 10px rgba(0,0,0,0.1)' : '-2px 0 5px rgba(0,0,0,0.05)',
+              zIndex: 1500, // Above Map controls
+              flexShrink: 0
+            }}
+          >
+            <div style={{ padding: '1rem', borderBottom: '1px solid #eee', background: '#f9f9f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '1rem', color: '#333' }}>Detalles de la Ruta</h2>
+            </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-              {pricingRules.map((rule, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.9rem' }}>Hasta</span>
-                  <input
-                    type="number"
-                    value={rule.maxKm}
-                    onChange={(e) => {
-                      const newRules = [...pricingRules];
-                      newRules[idx].maxKm = parseFloat(e.target.value);
-                      setPricingRules(newRules);
-                    }}
-                    style={{ width: '60px', padding: '4px' }}
-                  />
-                  <span style={{ fontSize: '0.9rem' }}>km:</span>
-                  <span style={{ fontWeight: 'bold' }}>$</span>
-                  <input
-                    type="number"
-                    value={rule.price}
-                    onChange={(e) => {
-                      const newRules = [...pricingRules];
-                      newRules[idx].price = parseFloat(e.target.value);
-                      setPricingRules(newRules);
-                    }}
-                    style={{ width: '60px', padding: '4px' }}
-                  />
-                  <button
-                    onClick={() => {
-                      const newRules = pricingRules.filter((_, i) => i !== idx);
-                      setPricingRules(newRules);
-                    }}
-                    style={{ background: '#ff4444', color: 'white', border: 'none', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }}
-                  >
-                    x
-                  </button>
+            <div style={{ flex: 1, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {routeInfo && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '1rem', borderBottom: '1px solid #eee' }}>
+                  <div><div style={{ fontSize: '0.75rem', color: '#666' }}>Distancia Total</div><div style={{ fontWeight: 'bold' }}>{formatDistance(routeInfo.distance)}</div></div>
+                  <div><div style={{ fontSize: '0.75rem', color: '#666' }}>Tiempo Est.</div><div style={{ fontWeight: 'bold' }}>{formatDuration(routeInfo.duration)}</div></div>
                 </div>
-              ))}
-              <button
-                onClick={() => setPricingRules([...pricingRules, { maxKm: 999, price: 0 }])}
-                style={{ background: '#2196F3', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', marginTop: '4px' }}
-              >
-                + Nueva Regla
-              </button>
-            </div>
+              )}
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '1rem' }}>
-              <button onClick={() => setShowSettings(false)} style={{ padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Listo</button>
+              <h3 style={{ margin: '0 0 5px 0', fontSize: '0.9rem', color: '#2196F3' }}>Pendientes ({pendingDeliveries.length})</h3>
+
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={pendingDeliveries.map(d => d.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {pendingDeliveries.map((delivery, idx) => (
+                    <SortableItem key={delivery.id} id={delivery.id}>
+                      <PendingItem
+                        delivery={delivery}
+                        idx={idx}
+                        isMobile={isMobile}
+                        highlightedId={highlightedId}
+                        start={start}
+                        onDelete={handleDeleteDelivery}
+                        onUpdate={handleUpdateDelivery}
+                        onMarkDelivered={markAsDelivered}
+                        onMove={handleMoveDelivery}
+                        isFirst={idx === 0}
+                        isLast={idx === pendingDeliveries.length - 1}
+                        itemRef={(el) => { itemRefs.current[delivery.id] = el; }}
+                      />
+                    </SortableItem>
+                  ))}
+                </SortableContext>
+              </DndContext>
+
+
+
+              {completedDeliveries.length > 0 && (
+                <>
+                  <h3 style={{ margin: '15px 0 5px 0', fontSize: '0.9rem', color: '#4CAF50' }}>Completados ({completedDeliveries.length})</h3>
+                  {completedDeliveries.map((delivery) => (
+                    <CompletedItem
+                      key={delivery.id}
+                      delivery={delivery}
+                      onDelete={handleDeleteDelivery}
+                      onUndo={markAsPending}
+                    />
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>
-      )}
-      {/* Share Modal */}
-      {showShareModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5000, padding: '20px' }} onClick={() => setShowShareModal(false)}>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Compartir Ruta</h3>
-            <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1.5rem', textAlign: 'center' }}>Selecciona cómo quieres compartir los detalles de la ruta con el motorizado:</p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button
-                onClick={() => {
-                  window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, '_blank');
-                  setShowShareModal(false);
-                }}
-                style={{ background: '#25D366', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              >
-                🟢 Enviar por WhatsApp
-              </button>
+        {/* Modal coords input */}
+        {showCoordInput && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.8)', zIndex: 3000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', minWidth: '300px' }}>
+              <h3 style={{ marginTop: 0 }}>Agregar Ubicación</h3>
+              <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '10px' }}>
+                Pega coordenadas, un enlace de Google Maps, o un <strong>Plus Code</strong> (ej: G424+J49 Caracas)
+              </p>
+              <input
+                autoFocus
+                type="text"
+                value={coordInputText}
+                onChange={(e) => setCoordInputText(e.target.value)}
+                placeholder="Ej: 10.49, -66.89 o Plus Code"
+                style={{ width: '100%', padding: '0.5rem', fontSize: '1rem', marginBottom: '1rem', boxSizing: 'border-box' }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCoordinateSubmit()}
+              />
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowCoordInput(false)} style={{ padding: '0.5rem 1rem', background: '#ccc', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={handleCoordinateSubmit} style={{ padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Agregar</button>
+              </div>
+            </div>
+          </div>
+        )}
 
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(shareMessage).then(() => {
-                    alert("¡Reporte copiado al portapapeles!");
+        {/* Modal Config Pricing */}
+        {showSettings && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.8)', zIndex: 4000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', width: '90%', maxWidth: '400px', maxHeight: '80vh', overflowY: 'auto' }}>
+              <h3 style={{ marginTop: 0 }}>Configurar Precios</h3>
+              <p style={{ fontSize: '0.9rem', color: '#666' }}>Define reglas de precio según distancia.</p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                {pricingRules.map((rule, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.9rem' }}>Hasta</span>
+                    <input
+                      type="number"
+                      value={rule.maxKm}
+                      onChange={(e) => {
+                        const newRules = [...pricingRules];
+                        newRules[idx].maxKm = parseFloat(e.target.value);
+                        setPricingRules(newRules);
+                      }}
+                      style={{ width: '60px', padding: '4px' }}
+                    />
+                    <span style={{ fontSize: '0.9rem' }}>km:</span>
+                    <span style={{ fontWeight: 'bold' }}>$</span>
+                    <input
+                      type="number"
+                      value={rule.price}
+                      onChange={(e) => {
+                        const newRules = [...pricingRules];
+                        newRules[idx].price = parseFloat(e.target.value);
+                        setPricingRules(newRules);
+                      }}
+                      style={{ width: '60px', padding: '4px' }}
+                    />
+                    <button
+                      onClick={() => {
+                        const newRules = pricingRules.filter((_, i) => i !== idx);
+                        setPricingRules(newRules);
+                      }}
+                      style={{ background: '#ff4444', color: 'white', border: 'none', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setPricingRules([...pricingRules, { maxKm: 999, price: 0 }])}
+                  style={{ background: '#2196F3', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', marginTop: '4px' }}
+                >
+                  + Nueva Regla
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                <button onClick={() => setShowSettings(false)} style={{ padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Listo</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Share Modal */}
+        {showShareModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5000, padding: '20px' }} onClick={() => setShowShareModal(false)}>
+            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Compartir Ruta</h3>
+              <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1.5rem', textAlign: 'center' }}>Selecciona cómo quieres compartir los detalles de la ruta con el motorizado:</p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  onClick={() => {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, '_blank');
                     setShowShareModal(false);
-                  });
-                }}
-                style={{ background: '#2196F3', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              >
-                📋 Copiar al Portapapeles
-              </button>
+                  }}
+                  style={{ background: '#25D366', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  🟢 Enviar por WhatsApp
+                </button>
 
-              <button
-                onClick={() => setShowShareModal(false)}
-                style={{ background: '#f5f5f5', color: '#666', border: 'none', padding: '10px', borderRadius: '8px', marginTop: '4px', cursor: 'pointer' }}
-              >
-                Cancelar
-              </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareMessage).then(() => {
+                      alert("¡Reporte copiado al portapapeles!");
+                      setShowShareModal(false);
+                    });
+                  }}
+                  style={{ background: '#2196F3', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  📋 Copiar al Portapapeles
+                </button>
+
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  style={{ background: '#f5f5f5', color: '#666', border: 'none', padding: '10px', borderRadius: '8px', marginTop: '4px', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  )
+        )}
+      </div>
+    </APIProvider>
+  );
 }
 
-export default App
+export default App;
